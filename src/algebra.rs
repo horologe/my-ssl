@@ -1,6 +1,6 @@
-use std::{mem, ptr::hash};
+use std::mem;
 
-use num_bigint::{BigInt, BigUint};
+use num_bigint::{BigInt, RandBigInt};
 use num_integer::Integer;
 use num_traits::Zero;
 
@@ -13,7 +13,7 @@ pub fn gcd(a: &BigInt, b: &BigInt) -> BigInt {
     let mut b = b.clone();
     let mut g = 0u32;
 
-    while a.is_zero() {
+    while !a.is_zero() {
         if a.is_even() && b.is_even() {
             a >>= 1;
             b >>= 1;
@@ -58,23 +58,23 @@ pub fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
 }
 
 // スライディングウィンドウ法を用いた冪乗の計算
-// pow_mod(a, b, n, w) = a^m (mod n)
+// mod_pow(a, b, n, w) = a^m (mod n)
 pub fn mod_pow(a: &BigInt, m: &BigInt, n: &BigInt, w: usize) -> BigInt {
     assert!(BigInt::from(0) <= *m);
     assert!(BigInt::from(0) < *n);
 
-    let mut ar = vec![BigInt::from(0);1<<w];
-    ar[0] = BigInt::from(1);
-    for k in 1..(1<<w) {
-        ar[k] = &ar[k-1] * a % n;
+    let mut ar = vec![BigInt::from(0);1<<(w-1)];
+    ar[0] = a % n;
+    for j in 1..(1<<(w-1)) {
+        ar[j] = &ar[j-1] * (a * a % n) % n;
     }
 
     let mut s = BigInt::from(1);
     let mut j = m.bits() as i64 - 1;
     while 0 <= j {
-        if !n.bit(j as u64) {
+        if !m.bit(j as u64) {
             s = &s * &s;
-            s %= m;
+            s %= n;
             j -= 1;
         } else {
             let mut l = i64::max(j - w as i64 + 1, 0) as u64;
@@ -85,7 +85,7 @@ pub fn mod_pow(a: &BigInt, m: &BigInt, n: &BigInt, w: usize) -> BigInt {
                 l += 1;
             }
             let mut mjl = 0;
-            for i in (1..=j as u64).rev() {
+            for i in (l..=j as u64).rev() {
                 mjl <<= 1;
                 if m.bit(i) {
                     mjl |= 1;
@@ -102,7 +102,7 @@ pub fn mod_pow(a: &BigInt, m: &BigInt, n: &BigInt, w: usize) -> BigInt {
     return s;
 }
 
-// 中国人剰余定理を用いた署名（暗号化）
+/// 中国人剰余定理を用いた署名（暗号化）
 pub fn sign(c: &BigInt, p: &BigInt, q: &BigInt, dp: &BigInt, dq: &BigInt, v: &BigInt) -> BigInt {
     let cp = c % p;
     let cq = c % q;
@@ -110,4 +110,27 @@ pub fn sign(c: &BigInt, p: &BigInt, q: &BigInt, dp: &BigInt, dq: &BigInt, v: &Bi
     let mq = mod_pow(&cq, dq, q, 4);
     let vv = v * (mq - &mp) % q;
     return vv * p + mp;
+}
+
+/// フェルマーテストを用いて素数判定をする
+/// ```rust
+/// use num_bigint::BigInt;
+/// use my_ssl::algebra::is_probable_prime;
+/// assert!(is_probable_prime(&BigInt::from(998244353), 134143));
+/// ```
+pub fn is_probable_prime(r: &BigInt, t: i32) -> bool {
+    assert!(BigInt::from(3) <= *r && r.bit(0) && 0 < t);
+    let rm1 = r - BigInt::from(1);
+    for _ in (0..t).rev() {
+        let mut random = rand::thread_rng();
+        let mut a;
+        while {
+            a = random.gen_bigint(r.bits());
+        a <= BigInt::from(1) && a >= rm1 } {}
+        let sr = mod_pow(&a, &rm1, r, 4);
+        if sr != BigInt::from(1) {
+            return false;
+        }
+    }
+    return true;
 }
